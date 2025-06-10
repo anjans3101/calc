@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive CDN Pricing Advisor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Stone & Amber -->
+    <!-- Application Structure Plan: The application is designed as an interactive step-by-step wizard. This structure was chosen because it directly translates the branching logic of the source flowchart into an intuitive and guided user experience. Instead of overwhelming the user with the full chart, this SPA focuses them on one decision at a time. A progress tracker provides context on the path taken, and a final, clear summary card presents the outcome. This approach reduces cognitive load and makes the complex pricing logic easily consumable. A "Start Over" button allows for easy exploration of different paths. -->
+    <!-- Visualization & Content Choices: The primary "visualization" is the interactive questionnaire itself, which turns the static flowchart into a dynamic user journey. This was chosen over a static diagram to improve usability and engagement. Each question is a step, and each choice dynamically reveals the next logical step. The final outcome is presented in a structured "result card" using HTML and Tailwind for clarity. This method is superior for guiding a user through a decision process. The newly added LLM-powered features provide on-demand contextual explanations, deepening user understanding of the recommendations. No charts (e.g., Chart.js) are necessary because the source material is about logical flows, not comparative quantitative data that requires charting. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .question-card, .result-card {
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+        }
+        .fade-out {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        .fade-in {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .prose {
+            text-align: left;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="bg-stone-100 text-stone-800 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl bg-white rounded-xl shadow-lg p-6 md:p-10 space-y-8">
+        
+        <header class="text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-stone-900">CDN Pricing Advisor</h1>
+            <p class="text-stone-600 mt-2">Answer a few questions to find the perfect pricing plan for your needs.</p>
+        </header>
+
+        <div id="progress-tracker" class="flex flex-wrap items-center justify-center gap-2 text-sm"></div>
+        
+        <main id="app-container">
+            <!-- Questions will be injected here -->
+        </main>
+
+        <div id="result-container" class="hidden">
+            <!-- Result will be injected here -->
+        </div>
+
+    </div>
+
+    <!-- LLM Response Modal -->
+    <div id="llm-response-modal" class="fixed inset-0 bg-stone-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden"></div>
+
+    <script>
+        const decisionTree = {
+            'start': {
+                question: "Is your traffic volume and pattern generally predictable and consistent?",
+                incentive: "This first step determines if a fixed package or a flexible rate card is a better fit.",
+                answers: [
+                    { text: "Yes, it's predictable", next: 'package_path_start' },
+                    { text: "No, it's unpredictable", next: 'rate_card_path_start' }
+                ]
+            },
+            'package_path_start': {
+                question: "What level of features, performance, and support do you require?",
+                incentive: "Packages offer budget predictability, bundled features, and simplified billing.",
+                answers: [
+                    { text: "Basic / Standard", next: 'package_tier_basic', package: 'Basic Package' },
+                    { text: "Growing / Enhanced", next: 'package_tier_standard', package: 'Standard Package' },
+                    { text: "Advanced / Enterprise", next: 'package_tier_premium', package: 'Premium Package' }
+                ]
+            },
+            'package_tier_basic': {
+                question: "Are you willing to commit to a longer-term contract for a significant discount?",
+                answers: [
+                    { text: "Yes, 3-Year Commitment", next: 'result_package_3yr' },
+                    { text: "1-Year or Month-to-Month", next: 'result_package_1yr' }
+                ]
+            },
+            'package_tier_standard': {
+                question: "Are you willing to commit to a longer-term contract for a significant discount?",
+                answers: [
+                    { text: "Yes, 3-Year Commitment", next: 'result_package_3yr' },
+                    { text: "1-Year or Month-to-Month", next: 'result_package_1yr' }
+                ]
+            },
+            'package_tier_premium': {
+                question: "Are you willing to commit to a longer-term contract for a significant discount?",
+                answers: [
+                    { text: "Yes, 3-Year Commitment", next: 'result_package_3yr' },
+                    { text: "1-Year or Month-to-Month", next: 'result_package_1yr' }
+                ]
+            },
+            'rate_card_path_start': {
+                question: "What is your primary geographic region for traffic?",
+                incentive: "Rate cards offer maximum flexibility, letting you pay only for what you use.",
+                answers: [
+                    { text: "North America / Europe", next: 'rate_card_commit_q', region: 'Region A (NA/EU)' },
+                    { text: "Asia / S. America / AU/NZ", next: 'rate_card_commit_q', region: 'Region B (APAC/SA)' },
+                    { text: "S. Korea / India / Africa", next: 'rate_card_commit_q', region: 'Region C (IN/AF)' }
+                ]
+            },
+            'rate_card_commit_q': {
+                question: "Are you willing to commit to a minimum monthly usage or spend for better unit rates?",
+                answers: [
+                    { text: "Yes, commit to minimum usage", next: 'rate_card_min_usage_term' },
+                    { text: "No, I need pure pay-as-you-go", next: 'rate_card_pure_payg_term' }
+                ]
+            },
+            'rate_card_min_usage_term': {
+                question: "For your minimum usage commitment, what contract term do you prefer?",
+                answers: [
+                    { text: "3-Year Term", next: 'result_rate_card_min_commit_3yr' },
+                    { text: "1-Year Term", next: 'result_rate_card_min_commit_1yr' }
+                ]
+            },
+            'rate_card_pure_payg_term': {
+                question: "Even without a minimum usage commit, would you agree to a 3-year term for a small discount?",
+                answers: [
+                    { text: "Yes, 3-Year Term", next: 'result_rate_card_payg_3yr' },
+                    { text: "No, Month-to-Month", next: 'result_rate_card_payg_monthly' }
+                ]
+            }
+        };
+
+        const results = {
+            'result_package_3yr': {
+                title: "Package Recommendation",
+                model: (state) => state.package,
+                commitment: "3-Year Commitment",
+                discount: "Highest Discount (15-20% Off)",
+                description: "This is the best option for predictable costs and maximum savings, locking in a great rate for the long term."
+            },
+            'result_package_1yr': {
+                title: "Package Recommendation",
+                model: (state) => state.package,
+                commitment: "1-Year / Month-to-Month",
+                discount: "Standard Discount (5-10% Off for 1-Year)",
+                description: "A great balance of savings and flexibility, perfect for those with consistent traffic who prefer shorter terms."
+            },
+             'result_rate_card_min_commit_3yr': {
+                title: "Rate Card Recommendation",
+                model: (state) => `Regional Rate Card (${state.region})`,
+                commitment: "Minimum Usage Commit (3-Year Term)",
+                discount: "Highest Unit Rate Discount (10-15% Off)",
+                description: "Ideal for maximizing unit rate savings while maintaining flexibility. You get our best rates by committing to a minimum spend over a 3-year term."
+            },
+            'result_rate_card_min_commit_1yr': {
+                title: "Rate Card Recommendation",
+                model: (state) => `Regional Rate Card (${state.region})`,
+                commitment: "Minimum Usage Commit (1-Year Term)",
+                discount: "Moderate Unit Rate Discount (5-10% Off)",
+                description: "Offers discounted unit rates with a shorter 1-year commitment, providing a good blend of savings and flexibility."
+            },
+            'result_rate_card_payg_3yr': {
+                title: "Rate Card Recommendation",
+                model: (state) => `Regional Rate Card (${state.region})`,
+                commitment: "Pure Pay-As-You-Go (3-Year Term)",
+                discount: "Small Unit Rate Discount (2-5% Off)",
+                description: "Provides full usage flexibility with a small discount as a reward for a long-term partnership, without a monthly minimum spend."
+            },
+            'result_rate_card_payg_monthly': {
+                title: "Rate Card Recommendation",
+                model: (state) => `Regional Rate Card (${state.region})`,
+                commitment: "Pure Pay-As-You-Go (Month-to-Month)",
+                discount: "Standard Regional Rates",
+                description: "The ultimate in flexibility. Pay only for what you use with no long-term commitment. Perfect for traffic that is highly variable or in early stages."
+            }
+        };
+
+        let currentState = 'start';
+        let userState = {};
+        let userPath = [];
+
+        const appContainer = document.getElementById('app-container');
+        const resultContainer = document.getElementById('result-container');
+        const progressTracker = document.getElementById('progress-tracker');
+        const llmResponseModal = document.getElementById('llm-response-modal');
+
+        const loadingSpinner = `
+            <div class="flex items-center justify-center space-x-2">
+                <div class="w-4 h-4 rounded-full animate-pulse bg-amber-500"></div>
+                <div class="w-4 h-4 rounded-full animate-pulse bg-amber-500 delay-150"></div>
+                <div class="w-4 h-4 rounded-full animate-pulse bg-amber-500 delay-300"></div>
+                <span class="text-white text-lg font-semibold">Generating insights...</span>
+            </div>
+        `;
+
+        function renderProgress() {
+            progressTracker.innerHTML = userPath.map((step, index) => {
+                const isLast = index === userPath.length - 1;
+                return `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-amber-100 text-amber-800 text-xs font-medium px-2.5 py-0.5 rounded-full">${step}</span>
+                        ${!isLast ? `<span class="text-stone-400 font-sans">&rarr;</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function fetchGeminiResponse(prompt) {
+            llmResponseModal.innerHTML = `<div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl">${loadingSpinner}</div>`;
+            llmResponseModal.classList.remove('hidden');
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    return text;
+                } else {
+                    console.error('Gemini API returned unexpected structure or no content:', result);
+                    return "Sorry, I couldn't generate a detailed response at this time. Please try again.";
+                }
+            } catch (error) {
+                console.error('Error calling Gemini API:', error);
+                return "An error occurred while fetching the response. Please try again later.";
+            }
+        }
+
+        function showLlmResponseInModal(content, title) {
+            llmResponseModal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative">
+                    <button id="close-llm-modal" class="absolute top-3 right-3 text-stone-500 hover:text-stone-800 text-2xl font-bold">&times;</button>
+                    <h3 class="text-xl font-bold text-stone-900 mb-4">${title}</h3>
+                    <div class="prose max-h-96 overflow-y-auto text-stone-700">${content}</div>
+                </div>
+            `;
+            llmResponseModal.classList.remove('hidden');
+            document.getElementById('close-llm-modal').addEventListener('click', () => {
+                llmResponseModal.classList.add('hidden');
+            });
+        }
+
+        function renderNode(nodeId) {
+            const node = decisionTree[nodeId];
+            
+            if (!node) {
+                renderResult(nodeId);
+                return;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'question-card fade-in text-center p-4';
+            
+            let answersHtml = node.answers.map(answer => 
+                `<button data-next="${answer.next}" data-value="${answer.text}" data-package="${answer.package || ''}" data-region="${answer.region || ''}" class="w-full text-left bg-stone-100 hover:bg-amber-100 hover:border-amber-300 border-2 border-stone-100 text-stone-700 font-semibold py-3 px-4 rounded-lg transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-opacity-50">${answer.text}</button>`
+            ).join('');
+
+            card.innerHTML = `
+                <h2 class="text-xl md:text-2xl font-semibold mb-2 text-stone-800">${node.question}</h2>
+                ${node.incentive ? `<p class="text-stone-600 mb-6">${node.incentive}</p>` : ''}
+                <div class="space-y-3">${answersHtml}</div>
+            `;
+            
+            appContainer.innerHTML = '';
+            appContainer.appendChild(card);
+            
+            card.querySelectorAll('button').forEach(button => {
+                button.addEventListener('click', handleAnswer);
+            });
+        }
+        
+        function handleAnswer(e) {
+            const nextNodeId = e.target.dataset.next;
+            const value = e.target.dataset.value;
+            const pkg = e.target.dataset.package;
+            const region = e.target.dataset.region;
+
+            if (pkg) userState.package = pkg;
+            if (region) userState.region = region;
+            
+            userPath.push(value);
+            renderProgress();
+
+            const card = appContainer.querySelector('.question-card');
+            card.classList.add('fade-out');
+            
+            setTimeout(() => {
+                currentState = nextNodeId;
+                renderNode(currentState);
+            }, 500);
+        }
+
+        function renderResult(resultId) {
+            const resultData = results[resultId];
+            if (!resultData) return;
+
+            let llmButtonsHtml = `
+                <button id="get-details-btn" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-opacity-75">✨ Get More Details</button>
+            `;
+
+            const modelType = resultData.model(userState);
+            if (modelType.startsWith("Basic Package") || modelType.startsWith("Standard Package") || modelType.startsWith("Premium Package")) {
+                llmButtonsHtml += `
+                    <button id="explain-package-btn" class="w-full bg-amber-400 hover:bg-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-opacity-75">✨ Explain Package Benefits</button>
+                `;
+            }
+
+            const resultHtml = `
+                <div class="result-card fade-in text-center bg-amber-50 rounded-lg p-6 md:p-8 border-2 border-amber-200">
+                    <h2 class="text-2xl font-bold text-stone-900">${resultData.title}</h2>
+                    <div class="mt-6 space-y-4">
+                        <div class="p-4 bg-white rounded-lg shadow-sm">
+                            <p class="text-sm font-medium text-stone-500">Recommended Model</p>
+                            <p class="text-lg font-bold text-amber-700">${resultData.model(userState)}</p>
+                        </div>
+                         <div class="p-4 bg-white rounded-lg shadow-sm">
+                            <p class="text-sm font-medium text-stone-500">Commitment</p>
+                            <p class="text-lg font-bold text-amber-700">${resultData.commitment}</p>
+                        </div>
+                         <div class="p-4 bg-white rounded-lg shadow-sm">
+                            <p class="text-sm font-medium text-stone-500">Discount</p>
+                            <p class="text-lg font-bold text-amber-700">${resultData.discount}</p>
+                        </div>
+                    </div>
+                    <p class="mt-6 text-stone-700">${resultData.description}</p>
+                    <div class="flex flex-col gap-3 mt-8">
+                        ${llmButtonsHtml}
+                        <button id="start-over-btn" class="w-full bg-stone-300 hover:bg-stone-400 text-stone-800 font-bold py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:ring-opacity-75">Start Over</button>
+                    </div>
+                </div>
+            `;
+
+            appContainer.classList.add('hidden');
+            resultContainer.innerHTML = resultHtml;
+            resultContainer.classList.remove('hidden');
+
+            document.getElementById('get-details-btn').addEventListener('click', async () => {
+                const prompt = `Provide a detailed explanation and justification for this CDN pricing recommendation:
+                    Model: ${resultData.model(userState)}
+                    Commitment: ${resultData.commitment}
+                    Discount: ${resultData.discount}
+                    Description: ${resultData.description}
+                    Also, consider that the user's initial traffic pattern was: "${userPath[0]}".
+                    Explain why this recommendation is a good fit and how it addresses typical customer needs for this type of plan. Keep it concise, around 150-200 words.`;
+                const llmResponse = await fetchGeminiResponse(prompt);
+                showLlmResponseInModal(llmResponse, "Detailed Recommendation Insights");
+            });
+
+            if (document.getElementById('explain-package-btn')) {
+                document.getElementById('explain-package-btn').addEventListener('click', async () => {
+                    const packageType = resultData.model(userState);
+                    const prompt = `Explain the typical benefits and features of a "${packageType}" in the context of CDN services. Focus on how it helps businesses, what kind of performance or security advantages it offers, and why a customer might choose it. Keep it concise, around 150-200 words.`;
+                    const llmResponse = await fetchGeminiResponse(prompt);
+                    showLlmResponseInModal(llmResponse, `Benefits of ${packageType}`);
+                });
+            }
+            document.getElementById('start-over-btn').addEventListener('click', resetApp);
+        }
+
+        function resetApp() {
+            const card = resultContainer.querySelector('.result-card');
+            if (card) {
+                card.classList.add('fade-out');
+            }
+
+            setTimeout(() => {
+                currentState = 'start';
+                userState = {};
+                userPath = [];
+                resultContainer.classList.add('hidden');
+                resultContainer.innerHTML = '';
+                appContainer.classList.remove('hidden');
+                progressTracker.innerHTML = '';
+                llmResponseModal.classList.add('hidden'); // Hide modal on reset
+                renderNode('start');
+            }, 500);
+        }
+
+        renderNode('start');
+    </script>
+</body>
+</html>
